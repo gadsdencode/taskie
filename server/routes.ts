@@ -217,7 +217,288 @@ Generate the JSON response now:
     }
   });
 
+  // Export project as PDF
+  app.get("/api/projects/:id/export", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const project = await storage.getProjectPlan(req.params.id, userId);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Generate PDF
+      const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
+      const pdfDoc = await PDFDocument.create();
+      const timesRomanFont = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+      const timesRomanBoldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+      const courierFont = await pdfDoc.embedFont(StandardFonts.Courier);
+      
+      const planData = project.planData as any;
+      let page = pdfDoc.addPage([612, 792]); // Letter size
+      let yPosition = 750;
+      const margin = 50;
+      const pageWidth = 612;
+      const contentWidth = pageWidth - (margin * 2);
+      
+      // Helper to add new page if needed
+      const checkPageSpace = (neededSpace: number) => {
+        if (yPosition - neededSpace < 50) {
+          page = pdfDoc.addPage([612, 792]);
+          yPosition = 750;
+        }
+      };
+      
+      // Title
+      page.drawText(project.projectName, {
+        x: margin,
+        y: yPosition,
+        size: 24,
+        font: timesRomanBoldFont,
+        color: rgb(0.1, 0.1, 0.1),
+      });
+      yPosition -= 40;
+      
+      // Description
+      const descriptionLines = wrapText(project.projectDescription, contentWidth, 11, timesRomanFont);
+      for (const line of descriptionLines) {
+        checkPageSpace(20);
+        page.drawText(line, {
+          x: margin,
+          y: yPosition,
+          size: 11,
+          font: timesRomanFont,
+          color: rgb(0.3, 0.3, 0.3),
+        });
+        yPosition -= 16;
+      }
+      yPosition -= 10;
+      
+      // Cost Analysis
+      checkPageSpace(100);
+      page.drawText("Cost Analysis", {
+        x: margin,
+        y: yPosition,
+        size: 18,
+        font: timesRomanBoldFont,
+        color: rgb(0.1, 0.1, 0.1),
+      });
+      yPosition -= 30;
+      
+      const costData = [
+        { label: "Materials Cost:", value: `$${planData.costAnalysis?.totalMaterialsCost?.toLocaleString() || '0'}` },
+        { label: "Labor Cost:", value: `$${planData.costAnalysis?.estimatedLaborCost?.toLocaleString() || '0'}` },
+        { label: "Total Project Cost:", value: `$${planData.costAnalysis?.totalProjectCost?.toLocaleString() || '0'}` },
+      ];
+      
+      for (const item of costData) {
+        checkPageSpace(25);
+        page.drawText(item.label, {
+          x: margin,
+          y: yPosition,
+          size: 12,
+          font: timesRomanFont,
+        });
+        page.drawText(item.value, {
+          x: margin + 200,
+          y: yPosition,
+          size: 12,
+          font: courierFont,
+          color: rgb(0, 0.4, 0.2),
+        });
+        yPosition -= 20;
+      }
+      yPosition -= 15;
+      
+      // Materials
+      if (planData.materials && planData.materials.length > 0) {
+        checkPageSpace(50);
+        page.drawText("Materials & Tools", {
+          x: margin,
+          y: yPosition,
+          size: 18,
+          font: timesRomanBoldFont,
+          color: rgb(0.1, 0.1, 0.1),
+        });
+        yPosition -= 30;
+        
+        for (const material of planData.materials) {
+          checkPageSpace(45);
+          page.drawText(`• ${material.item}`, {
+            x: margin + 10,
+            y: yPosition,
+            size: 11,
+            font: timesRomanBoldFont,
+          });
+          yPosition -= 16;
+          page.drawText(`  Quantity: ${material.quantity}`, {
+            x: margin + 15,
+            y: yPosition,
+            size: 10,
+            font: timesRomanFont,
+            color: rgb(0.3, 0.3, 0.3),
+          });
+          page.drawText(`Cost: $${material.estimatedCost?.toLocaleString() || '0'}`, {
+            x: margin + 250,
+            y: yPosition,
+            size: 10,
+            font: courierFont,
+            color: rgb(0, 0.4, 0.2),
+          });
+          yPosition -= 22;
+        }
+        yPosition -= 10;
+      }
+      
+      // Execution Steps
+      if (planData.executionSteps && planData.executionSteps.length > 0) {
+        checkPageSpace(50);
+        page.drawText("Execution Steps", {
+          x: margin,
+          y: yPosition,
+          size: 18,
+          font: timesRomanBoldFont,
+          color: rgb(0.1, 0.1, 0.1),
+        });
+        yPosition -= 30;
+        
+        for (let i = 0; i < planData.executionSteps.length; i++) {
+          const step = planData.executionSteps[i];
+          const stepLines = wrapText(`${i + 1}. ${step}`, contentWidth - 20, 10, timesRomanFont);
+          
+          for (let j = 0; j < stepLines.length; j++) {
+            checkPageSpace(18);
+            page.drawText(stepLines[j], {
+              x: margin + (j > 0 ? 20 : 10),
+              y: yPosition,
+              size: 10,
+              font: timesRomanFont,
+            });
+            yPosition -= 14;
+          }
+          yPosition -= 8;
+        }
+        yPosition -= 10;
+      }
+      
+      // Disposal Information
+      if (planData.disposalInfo) {
+        checkPageSpace(50);
+        page.drawText("Disposal Information", {
+          x: margin,
+          y: yPosition,
+          size: 18,
+          font: timesRomanBoldFont,
+          color: rgb(0.1, 0.1, 0.1),
+        });
+        yPosition -= 30;
+        
+        if (planData.disposalInfo.regulationsSummary) {
+          checkPageSpace(30);
+          page.drawText("Regulations Summary:", {
+            x: margin,
+            y: yPosition,
+            size: 12,
+            font: timesRomanBoldFont,
+          });
+          yPosition -= 20;
+          
+          const regLines = wrapText(planData.disposalInfo.regulationsSummary, contentWidth - 10, 10, timesRomanFont);
+          for (const line of regLines) {
+            checkPageSpace(16);
+            page.drawText(line, {
+              x: margin + 10,
+              y: yPosition,
+              size: 10,
+              font: timesRomanFont,
+            });
+            yPosition -= 14;
+          }
+          yPosition -= 15;
+        }
+        
+        if (planData.disposalInfo.landfillOptions && planData.disposalInfo.landfillOptions.length > 0) {
+          checkPageSpace(30);
+          page.drawText("Landfill Options:", {
+            x: margin,
+            y: yPosition,
+            size: 12,
+            font: timesRomanBoldFont,
+          });
+          yPosition -= 20;
+          
+          for (const option of planData.disposalInfo.landfillOptions) {
+            checkPageSpace(40);
+            page.drawText(`• ${option.name}`, {
+              x: margin + 10,
+              y: yPosition,
+              size: 11,
+              font: timesRomanBoldFont,
+            });
+            yPosition -= 16;
+            page.drawText(option.address, {
+              x: margin + 15,
+              y: yPosition,
+              size: 10,
+              font: timesRomanFont,
+              color: rgb(0.3, 0.3, 0.3),
+            });
+            yPosition -= 20;
+          }
+        }
+      }
+      
+      // Footer on all pages
+      const pages = pdfDoc.getPages();
+      for (let i = 0; i < pages.length; i++) {
+        const p = pages[i];
+        p.drawText(`Generated by AI Project Planner - Page ${i + 1} of ${pages.length}`, {
+          x: margin,
+          y: 30,
+          size: 8,
+          font: timesRomanFont,
+          color: rgb(0.5, 0.5, 0.5),
+        });
+      }
+      
+      const pdfBytes = await pdfDoc.save();
+      
+      // Send PDF
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${project.projectName.replace(/[^a-z0-9]/gi, '_')}.pdf"`);
+      res.send(Buffer.from(pdfBytes));
+    } catch (error) {
+      console.error("Error exporting project:", error);
+      res.status(500).json({ error: "Failed to export project" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
+}
+
+// Helper function to wrap text
+function wrapText(text: string, maxWidth: number, fontSize: number, font: any): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let currentLine = '';
+  
+  for (const word of words) {
+    const testLine = currentLine + (currentLine ? ' ' : '') + word;
+    const width = font.widthOfTextAtSize(testLine, fontSize);
+    
+    if (width > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+  
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  
+  return lines;
 }

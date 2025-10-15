@@ -3,12 +3,13 @@ import { useRoute, Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, ArrowLeft, Loader2 } from "lucide-react";
+import { Trash2, ArrowLeft, Loader2, Download } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { ProjectPlanRecord } from "@shared/schema";
 import { format } from "date-fns";
+import { useState } from "react";
 
 export default function Projects() {
   const { toast } = useToast();
@@ -140,6 +141,7 @@ export default function Projects() {
 
 function ProjectDetail({ id }: { id: string }) {
   const { toast } = useToast();
+  const [isExporting, setIsExporting] = useState(false);
   
   const { data: project, isLoading } = useQuery<ProjectPlanRecord>({
     queryKey: ["/api/projects", id],
@@ -149,6 +151,40 @@ function ProjectDetail({ id }: { id: string }) {
       return response.json();
     },
   });
+
+  const handleExportPDF = async () => {
+    try {
+      setIsExporting(true);
+      const response = await fetch(`/api/projects/${id}/export`);
+      
+      if (!response.ok) {
+        throw new Error("Failed to export PDF");
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${project?.projectName.replace(/[^a-z0-9]/gi, '_')}.pdf` || 'project.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: "PDF Downloaded",
+        description: "Your project plan has been exported successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export Failed",
+        description: "Failed to export PDF. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -190,6 +226,24 @@ function ProjectDetail({ id }: { id: string }) {
               Created {format(new Date(project.createdAt), "MMMM d, yyyy 'at' h:mm a")}
             </p>
           </div>
+          <Button
+            onClick={handleExportPDF}
+            disabled={isExporting}
+            variant="default"
+            data-testid="button-export-pdf"
+          >
+            {isExporting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Export PDF
+              </>
+            )}
+          </Button>
         </div>
 
         {/* Reuse ProjectPlanDisplay component */}
