@@ -3,6 +3,8 @@ import { createServer, type Server } from "http";
 import { GoogleGenAI } from "@google/genai";
 import { projectPlanSchema, projectInputSchema } from "@shared/schema";
 import { ZodError } from "zod";
+import { setupAuth, isAuthenticated } from "./replitAuth";
+import { storage } from "./storage";
 
 // DON'T DELETE THIS COMMENT
 // Using Gemini AI blueprint integration
@@ -10,13 +12,28 @@ import { ZodError } from "zod";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication
+  await setupAuth(app);
+
   // Health check endpoint
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Project planning endpoint with Gemini AI
-  app.post("/api/plan-project", async (req, res) => {
+  // Auth routes
+  app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // Project planning endpoint with Gemini AI (now requires auth and saves to DB)
+  app.post("/api/plan-project", isAuthenticated, async (req: any, res) => {
     try {
       // Validate input
       const { projectDescription } = projectInputSchema.parse(req.body);
@@ -109,7 +126,15 @@ Generate the JSON response now:
         throw new Error("AI response is missing required fields. Please try again.");
       }
 
-      res.json(validatedPlan);
+      // Save to database
+      const userId = req.user.claims.sub;
+      const savedProject = await storage.createProjectPlan(userId, projectDescription, validatedPlan);
+
+      res.json({
+        ...validatedPlan,
+        id: savedProject.id,
+        createdAt: savedProject.createdAt,
+      });
     } catch (error) {
       console.error("Error generating project plan:", error);
 
@@ -143,6 +168,52 @@ Generate the JSON response now:
       res.status(500).json({
         error: errorMessage || "Failed to generate project plan. Please try again.",
       });
+    }
+  });
+
+  // Get user's project history
+  app.get("/api/projects", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const projects = await storage.getUserProjectPlans(userId);
+      res.json(projects);
+    } catch (error) {
+      console.error("Error fetching projects:", error);
+      res.status(500).json({ error: "Failed to fetch projects" });
+    }
+  });
+
+  // Get specific project
+  app.get("/api/projects/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const project = await storage.getProjectPlan(req.params.id, userId);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      res.json(project);
+    } catch (error) {
+      console.error("Error fetching project:", error);
+      res.status(500).json({ error: "Failed to fetch project" });
+    }
+  });
+
+  // Delete project
+  app.delete("/api/projects/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const success = await storage.deleteProjectPlan(req.params.id, userId);
+      
+      if (!success) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      res.status(500).json({ error: "Failed to delete project" });
     }
   });
 
