@@ -23,6 +23,8 @@ export function ProjectInput({ onSubmit, isLoading }: ProjectInputProps) {
     e.preventDefault();
     if (description.trim().length >= 10) {
       onSubmit(description);
+      setDescription(""); // Clear input after submission
+      setCharCount(0);
     }
   };
 

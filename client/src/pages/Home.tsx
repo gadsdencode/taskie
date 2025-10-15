@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { ProjectInput } from "@/components/ProjectInput";
 import { ProjectPlanDisplay } from "@/components/ProjectPlanDisplay";
 import { ErrorDisplay } from "@/components/ErrorDisplay";
@@ -19,6 +19,7 @@ export default function Home() {
   const [lastDescription, setLastDescription] = useState<string>("");
   const { user, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   const generatePlanMutation = useMutation({
     mutationFn: async (projectDescription: string) => {
@@ -27,14 +28,17 @@ export default function Home() {
         "/api/plan-project",
         { projectDescription }
       );
-      return response as unknown as ProjectPlan;
+      return response as unknown as (ProjectPlan & { id: string });
     },
     onSuccess: (data) => {
-      setProjectPlan(data);
       toast({
         title: "Project plan created!",
-        description: "Your project has been saved to your account.",
+        description: "Redirecting to your project...",
       });
+      // Redirect to the project detail page after a brief delay
+      setTimeout(() => {
+        setLocation(`/projects/${data.id}`);
+      }, 800);
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
