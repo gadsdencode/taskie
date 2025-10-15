@@ -28,15 +28,27 @@ export default function Home() {
         "/api/plan-project",
         { projectDescription }
       );
-      return response as unknown as (ProjectPlan & { id: string });
+      const data = await response.json();
+      console.log('[Home] API response data:', { 
+        hasId: 'id' in data, 
+        id: data.id,
+        keys: Object.keys(data)
+      });
+      return data as (ProjectPlan & { id: string });
     },
     onSuccess: (data) => {
+      console.log('[Home] onSuccess data:', { 
+        hasId: 'id' in data, 
+        id: data.id,
+        keys: Object.keys(data)
+      });
       toast({
         title: "Project plan created!",
         description: "Redirecting to your project...",
       });
       // Redirect to the project detail page after a brief delay
       setTimeout(() => {
+        console.log('[Home] Redirecting to:', `/projects/${data.id}`);
         setLocation(`/projects/${data.id}`);
       }, 800);
     },
