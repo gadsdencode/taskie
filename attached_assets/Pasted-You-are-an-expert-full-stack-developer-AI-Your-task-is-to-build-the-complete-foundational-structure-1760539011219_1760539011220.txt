@@ -1,0 +1,615 @@
+You are an expert full-stack developer AI. Your task is to build the complete foundational structure for a new web application. Follow these instructions precisely and sequentially. Do not deviate from the provided file names, directory structures, or code content.
+
+Phase 1: Monorepo and Workspace Initialization
+Step 1.1: Create the Project Directory Structure
+First, create the root project directory and the necessary subdirectories for our monorepo structure.bash
+mkdir -p gemini-project-planner/apps/api/src gemini-project-planner/apps/client/src gemini-project-planner/packages/shared-types/src gemini-project-planner/packages/eslint-config gemini-project-planner/packages/tsconfig
+
+
+Navigate into the root directory. All subsequent commands will be run from here.
+
+```bash
+cd gemini-project-planner
+Step 1.2: Initialize PNPM Workspace
+Create the root package.json and the pnpm-workspace.yaml file to define the monorepo workspaces.
+
+Create package.json in the root with the following content:
+
+JSON
+
+{
+  "name": "gemini-project-planner-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.6"
+  },
+  "packageManager": "pnpm@9.5.0"
+}
+Create pnpm-workspace.yaml in the root:
+
+YAML
+
+packages:
+  - 'apps/*'
+  - 'packages/*'
+Step 1.3: Configure Turborepo
+Create turbo.json in the root to configure the task pipeline.
+
+JSON
+
+{
+  "$schema": "https://turbo.build/schema.json",
+  "pipeline": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "lint": {},
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}
+Phase 2: Shared Package Configuration
+Step 2.1: Create Shared TypeScript Configuration
+Create a base tsconfig.json in packages/tsconfig/base.json. This will be extended by other packages.
+
+JSON
+
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Default",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": true,
+    "declarationMap": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "inlineSources": false,
+    "isolatedModules": true,
+    "moduleResolution": "node",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "preserveWatchOutput": true,
+    "skipLibCheck": true,
+    "strict": true
+  },
+  "exclude": ["node_modules"]
+}
+Step 2.2: Create Shared ESLint Configuration
+Create packages/eslint-config/react.js.
+
+JavaScript
+
+module.exports = {
+  env: { browser: true, es2020: true },
+  extends: [
+    'eslint:recommended',
+    'plugin:@typescript-eslint/recommended',
+    'plugin:react-hooks/recommended',
+  ],
+  parser: '@typescript-eslint/parser',
+  plugins: ['react-refresh'],
+  rules: {
+    'react-refresh/only-export-components': 'warn',
+  },
+};
+Step 2.3: Create Shared Types Package
+This package will contain TypeScript interfaces shared between the frontend and backend.
+
+Create packages/shared-types/package.json:
+
+JSON
+
+{
+  "name": "@repo/shared-types",
+  "version": "1.0.0",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "lint": "eslint."
+  },
+  "devDependencies": {
+    "typescript": "^5.2.2",
+    "eslint": "^8.57.0",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/tsconfig": "workspace:*"
+  }
+}
+Create packages/shared-types/src/index.ts with the core ProjectPlan interface:
+
+TypeScript
+
+export interface ProjectPlan {
+  projectName: string;
+  materials: {
+    item: string;
+    quantity: string;
+    estimatedCost: number;
+  };
+  costAnalysis: {
+    totalMaterialsCost: number;
+    estimatedLaborCost: number;
+    totalProjectCost: number;
+  };
+  executionSteps: string;
+  disposalInfo: {
+    regulationsSummary: string;
+    landfillOptions: {
+      name: string;
+      address: string;
+    };
+  };
+}
+Create packages/shared-types/tsconfig.json:
+
+JSON
+
+{
+  "extends": "@repo/tsconfig/base.json",
+  "compilerOptions": {
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}
+Step 2.4: Configure Root TypeScript for Path Aliases
+Create tsconfig.json in the project root. This enables monorepo-wide path aliases.
+
+JSON
+
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@repo/shared-types/*": ["packages/shared-types/src/*"]
+    }
+  }
+}
+Phase 3: Backend API Setup (Express.js)
+Step 3.1: Initialize the API Project
+Create apps/api/package.json:
+
+JSON
+
+{
+  "name": "api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@google/genai": "^0.14.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@repo/shared-types": "workspace:*",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.9",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.5.3"
+  }
+}
+Create apps/api/tsconfig.json:
+
+JSON
+
+{
+  "extends": "@repo/tsconfig/base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "module": "CommonJS",
+    "baseUrl": ".",
+    "paths": {
+      "@repo/shared-types/*": ["../../packages/shared-types/src/*"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}
+Step 3.2: Create the Express Server and Gemini Integration
+Create apps/api/.env (and add it to a root .gitignore file later):
+
+GEMINI_API_KEY="PASTE_YOUR_GEMINI_API_KEY_HERE"
+PORT=4000
+Create apps/api/src/index.ts:
+
+TypeScript
+
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { projectPlannerRouter } from './routes/projectPlanner';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT |
+
+| 4000;
+
+app.use(cors());
+app.use(express.json());
+
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.use('/api', projectPlannerRouter);
+
+app.listen(PORT, () => {
+  console.log(`API server running at http://localhost:${PORT}`);
+});
+Create apps/api/src/routes/projectPlanner.ts with the core API logic:
+
+TypeScript
+
+import { Router } from 'express';
+import { GoogleGenerativeAI } from '@google/genai';
+import type { ProjectPlan } from '@repo/shared-types';
+
+export const projectPlannerRouter = Router();
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY as string);
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+projectPlannerRouter.post('/plan-project', async (req, res) => {
+  const { projectDescription } = req.body;
+
+  if (!projectDescription) {
+    return res.status(400).json({ error: 'Project description is required.' });
+  }
+
+  const prompt = `
+   
+    You are an expert project planner and cost estimator for home improvement projects.
+
+   
+    Analyze the user's project request and generate a comprehensive project plan. Follow a "Plan-and-Solve" approach. First, devise a plan for your research. Second, execute that plan to generate the final output covering:
+    1. A list of all materials and tools required.
+    2. A detailed cost analysis for materials and typical labor in Chesterfield County, Virginia.
+    3. A logical, step-by-step execution guide.
+    4. Specific regulations for construction debris disposal in Chesterfield County, Virginia, including landfill options.
+
+   
+    - User's Project Request: "${projectDescription}"
+    - Location for Analysis: Chesterfield County, Virginia
+
+   
+    Respond ONLY with a single, valid JSON object that adheres to the following schema. Do not include markdown or any other text.
+    <schema>
+    {
+      "projectName": "string",
+      "materials": [{ "item": "string", "quantity": "string", "estimatedCost": "number" }],
+      "costAnalysis": { "totalMaterialsCost": "number", "estimatedLaborCost": "number", "totalProjectCost": "number" },
+      "executionSteps": ["string"],
+      "disposalInfo": { "regulationsSummary": "string", "landfillOptions": [{ "name": "string", "address": "string" }] }
+    }
+    </schema>
+  `;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    // Basic validation to ensure the response is likely JSON
+    if (text.trim().startsWith('{') && text.trim().endsWith('}')) {
+      const plan: ProjectPlan = JSON.parse(text);
+      res.status(200).json(plan);
+    } else {
+      throw new Error("AI did not return valid JSON.");
+    }
+  } catch (error) {
+    console.error('Error calling Gemini API:', error);
+    res.status(500).json({ error: 'Failed to generate project plan from AI.' });
+  }
+});
+Phase 4: Frontend Client Setup (Vite + React + TS)
+Step 4.1: Initialize the Client Project
+Create apps/client/package.json:
+
+JSON
+
+{
+  "name": "client",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "lint": "eslint. --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@repo/shared-types": "workspace:*",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/eslint-plugin": "^7.13.1",
+    "@typescript-eslint/parser": "^7.13.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "eslint-plugin-react-refresh": "^0.4.7",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.2.2",
+    "vite": "^5.3.1"
+  }
+}
+Step 4.2: Configure Vite, TypeScript, and TailwindCSS
+Create apps/client/vite.config.ts:
+
+TypeScript
+
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
+    },
+  },
+})
+Create apps/client/tsconfig.json:
+
+JSON
+
+{
+  "extends": "@repo/tsconfig/base.json",
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib":,
+    "module": "ESNext",
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@repo/shared-types/*": ["../../packages/shared-types/src/*"]
+    }
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
+Create apps/client/tailwind.config.js and apps/client/postcss.config.js:
+
+JavaScript
+
+// tailwind.config.js
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  theme: { extend: {} },
+  plugins:,
+};
+
+// postcss.config.js
+export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+Step 4.3: Create React Components
+Create apps/client/src/index.css and add Tailwind directives:
+
+CSS
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+Replace the content of apps/client/src/App.tsx with the main application component:
+
+TypeScript
+
+import { useState } from 'react';
+import type { ProjectPlan } from '@repo/shared-types';
+
+function App() {
+  const = useState('');
+  const [plan, setPlan] = useState<ProjectPlan | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    setPlan(null);
+
+    try {
+      const response = await fetch('/api/plan-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectDescription: description }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error |
+
+| 'An unknown error occurred.');
+      }
+
+      const data: ProjectPlan = await response.json();
+      setPlan(data);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 text-gray-800 font-sans p-4 sm:p-8">
+      <div className="max-w-4xl mx-auto">
+        <header className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-blue-600">AI Project Planner</h1>
+          <p className="text-lg text-gray-600 mt-2">Describe your project and get a detailed plan instantly.</p>
+        </header>
+
+        <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-md mb-8">
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="e.g., I want to install new kitchen cabinets in a 10x12 foot kitchen."
+            className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+            rows={4}
+            required
+          />
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="mt-4 w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md hover:bg-blue-700 transition duration-200 disabled:bg-blue-300 disabled:cursor-not-allowed"
+          >
+            {isLoading? 'Generating Plan...' : 'Generate Project Plan'}
+          </button>
+        </form>
+
+        {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md relative mb-8" role="alert">{error}</div>}
+        
+        {plan && <ProjectPlanDisplay plan={plan} />}
+      </div>
+    </div>
+  );
+}
+
+const ProjectPlanDisplay = ({ plan }: { plan: ProjectPlan }) => (
+  <div className="space-y-8">
+    <section className="bg-white p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-4 border-b pb-2 text-blue-600">{plan.projectName}</h2>
+      
+      <div className="grid md:grid-cols-2 gap-6">
+        <div>
+          <h3 className="text-xl font-semibold mb-3">Cost Analysis</h3>
+          <ul className="space-y-2 text-gray-700">
+            <li><strong>Materials:</strong> ${plan.costAnalysis.totalMaterialsCost.toLocaleString()}</li>
+            <li><strong>Labor:</strong> ${plan.costAnalysis.estimatedLaborCost.toLocaleString()}</li>
+            <li className="font-bold text-lg border-t pt-2 mt-2"><strong>Total:</strong> ${plan.costAnalysis.totalProjectCost.toLocaleString()}</li>
+          </ul>
+        </div>
+        <div>
+          <h3 className="text-xl font-semibold mb-3">Disposal Information</h3>
+          <p className="mb-2">{plan.disposalInfo.regulationsSummary}</p>
+          <h4 className="font-semibold">Facilities:</h4>
+          <ul className="list-disc list-inside">
+            {plan.disposalInfo.landfillOptions.map((option, i) => (
+              <li key={i}><strong>{option.name}</strong>: {option.address}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section className="bg-white p-6 rounded-lg shadow-md">
+      <h3 className="text-xl font-semibold mb-3">Materials & Tools</h3>
+      <table className="w-full text-left">
+        <thead><tr className="border-b"><th className="py-2">Item</th><th>Quantity</th><th>Est. Cost</th></tr></thead>
+        <tbody>
+          {plan.materials.map((mat, i) => (
+            <tr key={i} className="border-b"><td className="py-2">{mat.item}</td><td>{mat.quantity}</td><td>${mat.estimatedCost}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+
+    <section className="bg-white p-6 rounded-lg shadow-md">
+      <h3 className="text-xl font-semibold mb-3">Execution Steps</h3>
+      <ol className="list-decimal list-inside space-y-2">
+        {plan.executionSteps.map((step, i) => <li key={i}>{step}</li>)}
+      </ol>
+    </section>
+  </div>
+);
+
+export default App;
+Phase 5: Final Steps
+Step 5.1: Create Root.gitignore
+Create a .gitignore file in the project root.
+
+# Dependencies
+/node_modules
+/.pnpm-store
+
+# Build outputs
+/dist
+/.next
+/out
+
+# IDE files
+.idea
+.vscode
+
+# Environment files
+.env
+.env*.local
+
+# Turbo
+.turbo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+Step 5.2: Install All Dependencies
+Run the following command from the root directory to install all dependencies for all workspaces.
+
+Bash
+
+pnpm install
+Step 5.3: Run the Application
+You can now start the entire application with a single command from the root directory.
+
+Bash
+
+pnpm dev
+This will start the Vite frontend server (typically on localhost:5173) and the Express backend server (on localhost:4000). You can now access the application in your browser.
+
+
+## Conclusion: From Automated Scaffolding to Production Deployment
+
+This report has provided a comprehensive technical blueprint for creating a sophisticated, AI-powered project planning application. By adhering to modern software engineering principles, the proposed architecture ensures the final product is not only functional but also scalable, maintainable, and robust.
+
+The strategic adoption of a **monorepo managed by pnpm and Turborepo** establishes a solid foundation. This structure streamlines dependency management, enables atomic commits across the stack, and, most critically, facilitates end-to-end type safety through a shared TypeScript package. This architectural choice is fundamental to the long-term viability and developer efficiency of the project.
+
+The backend is engineered for **security and resilience**. The integration with the Google Gemini API prioritizes the secure handling of credentials through environment variables and implements robust error handling to manage the unpredictability of external service calls. This ensures the application can respond gracefully to failures, providing a stable user experience.
+
+On the frontend, the use of **Vite, React, and TailwindCSS** delivers a high-performance, modern user interface. The component-based rendering strategy transforms the structured JSON data from the AI into a clear, intuitive, and user-friendly project plan, demonstrating a commitment to excellent user experience design.
+
+Finally, the application's core intelligence is driven by **advanced prompt engineering**. By employing techniques like Task Decomposition, Plan-and-Solve prompting, and few-shot examples to enforce a strict JSON output, the system can reliably convert unstructured user requests into valuable, structured data.
+
+The master prompt provided in the final section encapsulates this entire blueprint, transforming architectural theory into an actionable script for an AI coding agent. This automated scaffolding process significantly accelerates the initial development phase, allowing developers to focus immediately on feature enhancement and business logic.
+
+### Next Steps and Future Enhancements
+
+With this foundation in place, the path to a production-ready application is clear. Future development efforts should focus on the following areas:
+*   **Data Persistence:** Integrate a database (such as PostgreSQL or MongoDB) to save user-generated project plans, enabling features like project history and sharing.
+*   **User Authentication:** Implement a secure authentication system (e.g., using Passport.js or a third-party service like Auth0 or Firebase Authentication) to manage user accounts and protect user data.
+*   **Testing:** Develop a comprehensive testing suite, including unit tests for critical business logic in the backend, integration tests for the API endpoints, and component tests for the React UI to ensure reliability and prevent regressions.
+*   **Deployment:** The monorepo can be deployed to modern hosting platforms like Vercel or Render. This typically involves creating separate projects for the `apps/api` and `apps/client` directories.[44, 45] The frontend (`client`) can be deployed as a static site, while the backend (`api`) is deployed as a serverless function or a Node.js service. Environment variables, including the `GEMINI_API_KEY`, must be securely configured in the deployment environment for each respective service.[46]
+
+By following this roadmap, the automatically scaffolded application can evolve from a powerful proof-of-concept into a fully-
