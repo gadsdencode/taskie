@@ -236,28 +236,51 @@ Generate the JSON response now:
       
       const planData = project.planData as any;
       let page = pdfDoc.addPage([612, 792]); // Letter size
-      let yPosition = 750;
+      let yPosition = 720; // Start below header
       const margin = 50;
       const pageWidth = 612;
       const contentWidth = pageWidth - (margin * 2);
+      const headerHeight = 60;
+      
+      // Helper to draw page header
+      const drawPageHeader = (currentPage: any, pageNumber: number) => {
+        currentPage.drawText(project.projectName, {
+          x: margin,
+          y: 762,
+          size: 11,
+          font: timesRomanBoldFont,
+          color: rgb(0.2, 0.2, 0.2),
+        });
+        currentPage.drawLine({
+          start: { x: margin, y: 752 },
+          end: { x: pageWidth - margin, y: 752 },
+          thickness: 0.5,
+          color: rgb(0.7, 0.7, 0.7),
+        });
+      };
       
       // Helper to add new page if needed
       const checkPageSpace = (neededSpace: number) => {
         if (yPosition - neededSpace < 50) {
+          const pageNumber = pdfDoc.getPages().length + 1;
           page = pdfDoc.addPage([612, 792]);
-          yPosition = 750;
+          yPosition = 720; // Reset below header
+          drawPageHeader(page, pageNumber);
         }
       };
       
-      // Title
+      // Draw header on first page
+      drawPageHeader(page, 1);
+      
+      // Title (only on first page - not repeated in header)
       page.drawText(project.projectName, {
         x: margin,
         y: yPosition,
-        size: 24,
+        size: 22,
         font: timesRomanBoldFont,
         color: rgb(0.1, 0.1, 0.1),
       });
-      yPosition -= 40;
+      yPosition -= 35;
       
       // Description
       const descriptionLines = wrapText(project.projectDescription, contentWidth, 11, timesRomanFont);
