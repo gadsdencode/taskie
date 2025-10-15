@@ -9,6 +9,7 @@ import { apiRequest } from "@/lib/queryClient";
 
 export default function Home() {
   const [projectPlan, setProjectPlan] = useState<ProjectPlan | null>(null);
+  const [lastDescription, setLastDescription] = useState<string>("");
 
   const generatePlanMutation = useMutation({
     mutationFn: async (projectDescription: string) => {
@@ -26,11 +27,15 @@ export default function Home() {
 
   const handleSubmit = (description: string) => {
     setProjectPlan(null);
+    setLastDescription(description);
     generatePlanMutation.mutate(description);
   };
 
   const handleRetry = () => {
-    generatePlanMutation.reset();
+    if (lastDescription) {
+      generatePlanMutation.reset();
+      generatePlanMutation.mutate(lastDescription);
+    }
   };
 
   return (

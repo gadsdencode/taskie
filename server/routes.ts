@@ -68,16 +68,26 @@ Schema:
 Generate the JSON response now:
 `;
 
-      // Call Gemini AI
+      // Call Gemini AI with properly structured content
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: prompt,
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: prompt }],
+          },
+        ],
       });
+
+      // Check if response has candidates
+      if (!response.candidates || response.candidates.length === 0) {
+        throw new Error("No response candidates from AI. Please try again.");
+      }
 
       const text = response.text;
 
       if (!text) {
-        throw new Error("Empty response from AI");
+        throw new Error("Empty response from AI. Please try again.");
       }
 
       // Extract JSON from response (handle potential markdown wrapping)
@@ -94,25 +104,44 @@ Generate the JSON response now:
       const parsedData = JSON.parse(jsonText);
       const validatedPlan = projectPlanSchema.parse(parsedData);
 
+      // Additional safety check
+      if (!validatedPlan.costAnalysis || !validatedPlan.materials || !validatedPlan.executionSteps) {
+        throw new Error("AI response is missing required fields. Please try again.");
+      }
+
       res.json(validatedPlan);
     } catch (error) {
       console.error("Error generating project plan:", error);
 
+      // Log the actual error for debugging
+      if (error && typeof error === 'object' && 'message' in error) {
+        console.error("Error details:", JSON.stringify(error, null, 2));
+      }
+
       if (error instanceof ZodError) {
+        console.error("Zod validation errors:", JSON.stringify(error.errors, null, 2));
         return res.status(400).json({
-          error: "Invalid input data",
+          error: "AI response validation failed. Please try again with a different description.",
           details: error.errors,
         });
       }
 
       if (error instanceof SyntaxError) {
         return res.status(500).json({
-          error: "Failed to parse AI response. Please try again.",
+          error: "Failed to parse AI response. The AI service may be experiencing issues. Please try again.",
+        });
+      }
+
+      // Handle Gemini API specific errors
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      if (errorMessage.includes("overloaded") || errorMessage.includes("UNAVAILABLE")) {
+        return res.status(503).json({
+          error: "The AI service is currently overloaded. Please try again in a moment.",
         });
       }
 
       res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to generate project plan. Please try again.",
+        error: errorMessage || "Failed to generate project plan. Please try again.",
       });
     }
   });
