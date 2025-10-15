@@ -59,7 +59,7 @@ export function ProjectPlanDisplay({ plan }: ProjectPlanDisplayProps) {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-mono font-semibold" data-testid="text-materials-cost">
-              ${plan.costAnalysis.totalMaterialsCost.toLocaleString()}
+              ${(plan.costAnalysis?.totalMaterialsCost ?? 0).toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -77,7 +77,7 @@ export function ProjectPlanDisplay({ plan }: ProjectPlanDisplayProps) {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-mono font-semibold" data-testid="text-labor-cost">
-              ${plan.costAnalysis.estimatedLaborCost.toLocaleString()}
+              ${(plan.costAnalysis?.estimatedLaborCost ?? 0).toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -95,7 +95,7 @@ export function ProjectPlanDisplay({ plan }: ProjectPlanDisplayProps) {
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-mono font-semibold text-chart-2" data-testid="text-total-cost">
-              ${plan.costAnalysis.totalProjectCost.toLocaleString()}
+              ${(plan.costAnalysis?.totalProjectCost ?? 0).toLocaleString()}
             </p>
           </CardContent>
         </Card>
@@ -111,7 +111,7 @@ export function ProjectPlanDisplay({ plan }: ProjectPlanDisplayProps) {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {plan.materials.map((material, index) => (
+            {plan.materials?.map((material, index) => (
               <div
                 key={index}
                 className="flex items-start justify-between p-4 rounded-md border border-border bg-card hover-elevate transition-all"
@@ -126,7 +126,7 @@ export function ProjectPlanDisplay({ plan }: ProjectPlanDisplayProps) {
                   </p>
                 </div>
                 <Badge variant="secondary" className="font-mono ml-2" data-testid={`text-material-cost-${index}`}>
-                  ${material.estimatedCost.toLocaleString()}
+                  ${(material.estimatedCost ?? 0).toLocaleString()}
                 </Badge>
               </div>
             ))}
@@ -144,13 +144,13 @@ export function ProjectPlanDisplay({ plan }: ProjectPlanDisplayProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {plan.executionSteps.map((step, index) => (
+            {plan.executionSteps?.map((step, index) => (
               <div key={index} className="flex gap-4" data-testid={`step-${index}`}>
                 <div className="flex flex-col items-center">
                   <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground font-semibold text-sm">
                     {index + 1}
                   </div>
-                  {index < plan.executionSteps.length - 1 && (
+                  {index < (plan.executionSteps?.length ?? 0) - 1 && (
                     <div className="w-0.5 flex-1 bg-border mt-2" />
                   )}
                 </div>
@@ -179,14 +179,14 @@ export function ProjectPlanDisplay({ plan }: ProjectPlanDisplayProps) {
               <span className="text-chart-4">⚠️</span> Regulations Summary
             </h4>
             <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-disposal-regulations">
-              {plan.disposalInfo.regulationsSummary}
+              {plan.disposalInfo?.regulationsSummary ?? 'No disposal information available.'}
             </p>
           </div>
 
           <div>
             <h4 className="font-semibold mb-3">Landfill & Disposal Facilities</h4>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {plan.disposalInfo.landfillOptions.map((option, index) => (
+              {plan.disposalInfo?.landfillOptions?.map((option, index) => (
                 <div
                   key={index}
                   className="flex gap-3 p-4 rounded-md border border-border bg-card hover-elevate transition-all"
