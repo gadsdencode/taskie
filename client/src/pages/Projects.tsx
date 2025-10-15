@@ -3,9 +3,11 @@ import { useRoute, Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, ArrowLeft, Loader2, Download } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Trash2, ArrowLeft, Loader2, Download, Home, LogOut } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { ProjectPlanRecord } from "@shared/schema";
 import { format } from "date-fns";
@@ -13,11 +15,26 @@ import { useState } from "react";
 
 export default function Projects() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [match, params] = useRoute("/projects/:id");
   
   const { data: projects, isLoading } = useQuery<ProjectPlanRecord[]>({
     queryKey: ["/api/projects"],
   });
+
+  const handleLogout = () => {
+    window.location.href = "/api/logout";
+  };
+
+  const getUserInitials = () => {
+    if (user?.firstName && user?.lastName) {
+      return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
+    }
+    if (user?.email) {
+      return user.email[0].toUpperCase();
+    }
+    return "U";
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -52,24 +69,52 @@ export default function Projects() {
 
   // If viewing specific project
   if (match && params.id) {
-    return <ProjectDetail id={params.id} />;
+    return <ProjectDetail id={params.id} user={user} getUserInitials={getUserInitials} handleLogout={handleLogout} />;
   }
 
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">My Projects</h1>
-            <p className="text-muted-foreground mt-1">
-              View and manage your saved project plans
-            </p>
+        {/* Navigation Header */}
+        <div className="flex items-center justify-between pb-4 border-b">
+          <div className="flex items-center gap-4">
+            <Link href="/">
+              <Button variant="ghost" size="icon" data-testid="button-home">
+                <Home className="h-5 w-5" />
+              </Button>
+            </Link>
+            <div>
+              <h1 className="text-3xl font-bold">My Projects</h1>
+              <p className="text-muted-foreground mt-1">
+                View and manage your saved project plans
+              </p>
+            </div>
           </div>
-          <Link href="/">
-            <Button variant="outline" data-testid="button-new-project">
-              Create New Project
-            </Button>
-          </Link>
+          
+          <div className="flex items-center gap-2">
+            <Link href="/">
+              <Button variant="outline" data-testid="button-new-project">
+                Create New Project
+              </Button>
+            </Link>
+            
+            {user && (
+              <div className="flex items-center gap-3 px-3 py-2 rounded-md border">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={user.profileImageUrl || undefined} />
+                  <AvatarFallback>{getUserInitials()}</AvatarFallback>
+                </Avatar>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleLogout}
+                  data-testid="button-logout"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
 
         {isLoading && (
@@ -139,7 +184,17 @@ export default function Projects() {
   );
 }
 
-function ProjectDetail({ id }: { id: string }) {
+function ProjectDetail({ 
+  id, 
+  user, 
+  getUserInitials, 
+  handleLogout 
+}: { 
+  id: string;
+  user: any;
+  getUserInitials: () => string;
+  handleLogout: () => void;
+}) {
   const { toast } = useToast();
   const [isExporting, setIsExporting] = useState(false);
   
@@ -214,36 +269,64 @@ function ProjectDetail({ id }: { id: string }) {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        <div className="flex items-center gap-4">
-          <Link href="/projects">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div className="flex-1">
-            <h1 className="text-3xl font-bold">{project.projectName}</h1>
-            <p className="text-muted-foreground mt-1">
-              Created {format(new Date(project.createdAt), "MMMM d, yyyy 'at' h:mm a")}
-            </p>
+        {/* Navigation Header */}
+        <div className="flex items-center justify-between pb-4 border-b">
+          <div className="flex items-center gap-4">
+            <Link href="/">
+              <Button variant="ghost" size="icon" data-testid="button-home">
+                <Home className="h-5 w-5" />
+              </Button>
+            </Link>
+            <Link href="/projects">
+              <Button variant="ghost" size="icon" data-testid="button-back-projects">
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            </Link>
+            <div className="flex-1">
+              <h1 className="text-3xl font-bold">{project.projectName}</h1>
+              <p className="text-muted-foreground mt-1">
+                Created {format(new Date(project.createdAt), "MMMM d, yyyy 'at' h:mm a")}
+              </p>
+            </div>
           </div>
-          <Button
-            onClick={handleExportPDF}
-            disabled={isExporting}
-            variant="default"
-            data-testid="button-export-pdf"
-          >
-            {isExporting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Exporting...
-              </>
-            ) : (
-              <>
-                <Download className="mr-2 h-4 w-4" />
-                Export PDF
-              </>
+          
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleExportPDF}
+              disabled={isExporting}
+              variant="default"
+              data-testid="button-export-pdf"
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-4 w-4" />
+                  Export PDF
+                </>
+              )}
+            </Button>
+            
+            {user && (
+              <div className="flex items-center gap-3 px-3 py-2 rounded-md border">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={user.profileImageUrl || undefined} />
+                  <AvatarFallback>{getUserInitials()}</AvatarFallback>
+                </Avatar>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleLogout}
+                  data-testid="button-logout"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             )}
-          </Button>
+          </div>
         </div>
 
         {/* Reuse ProjectPlanDisplay component */}
