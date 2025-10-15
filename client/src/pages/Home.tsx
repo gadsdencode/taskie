@@ -13,12 +13,12 @@ export default function Home() {
 
   const generatePlanMutation = useMutation({
     mutationFn: async (projectDescription: string) => {
-      const response = await apiRequest<ProjectPlan>(
+      const response = await apiRequest(
         "POST",
         "/api/plan-project",
         { projectDescription }
       );
-      return response;
+      return response as unknown as ProjectPlan;
     },
     onSuccess: (data) => {
       setProjectPlan(data);
