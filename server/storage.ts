@@ -59,6 +59,26 @@ export class DatabaseStorage implements IStorage {
         planData: planData as any,
       })
       .returning();
+    
+    // Log the returned project for debugging
+    console.log('[createProjectPlan] Returned project:', JSON.stringify({
+      id: project?.id,
+      projectName: project?.projectName,
+      hasId: !!project?.id
+    }));
+    
+    // Fallback: if returning() didn't work, query the most recent project
+    if (!project || !project.id) {
+      console.warn('[createProjectPlan] No ID returned, querying for most recent project');
+      const [latestProject] = await db
+        .select()
+        .from(projectPlans)
+        .where(eq(projectPlans.userId, userId))
+        .orderBy(desc(projectPlans.createdAt))
+        .limit(1);
+      return latestProject;
+    }
+    
     return project;
   }
 
