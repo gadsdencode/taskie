@@ -47,12 +47,14 @@ export const projectPlans = pgTable("project_plans", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   projectName: text("project_name").notNull(),
   projectDescription: text("project_description").notNull(),
-  planData: jsonb("plan_data").notNull(), // Stores the full ProjectPlan object
+  planData: jsonb("plan_data"), // Stores the full ProjectPlan object (nullable for pending projects)
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // "pending" | "generating" | "completed" | "failed"
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_project_plans_user_id").on(table.userId),
   index("idx_project_plans_created_at").on(table.createdAt),
+  index("idx_project_plans_status").on(table.status),
 ]);
 
 export type ProjectPlanRecord = typeof projectPlans.$inferSelect;
