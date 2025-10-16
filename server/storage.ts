@@ -17,6 +17,8 @@ export interface IStorage {
   
   // Project operations
   createProjectPlan(userId: string, description: string, planData: ProjectPlan): Promise<ProjectPlanRecord>;
+  createPendingProject(userId: string, description: string): Promise<ProjectPlanRecord>;
+  updateProjectWithPlan(id: string, userId: string, planData: ProjectPlan, status: string): Promise<ProjectPlanRecord | undefined>;
   getUserProjectPlans(userId: string): Promise<ProjectPlanRecord[]>;
   getProjectPlan(id: string, userId: string): Promise<ProjectPlanRecord | undefined>;
   deleteProjectPlan(id: string, userId: string): Promise<boolean>;
@@ -57,6 +59,7 @@ export class DatabaseStorage implements IStorage {
         projectName: planData.projectName,
         projectDescription: description,
         planData: planData as any,
+        status: "completed", // Mark as completed since we have the plan data
       })
       .returning();
     
@@ -80,6 +83,51 @@ export class DatabaseStorage implements IStorage {
     }
     
     return project;
+  }
+
+  async createPendingProject(
+    userId: string,
+    description: string
+  ): Promise<ProjectPlanRecord> {
+    const [project] = await db
+      .insert(projectPlans)
+      .values({
+        userId,
+        projectName: "Generating...", // Temporary name while generating
+        projectDescription: description,
+        planData: null, // No plan data yet
+        status: "pending",
+      })
+      .returning();
+    
+    console.log('[createPendingProject] Created pending project:', project?.id);
+    return project;
+  }
+
+  async updateProjectWithPlan(
+    id: string,
+    userId: string,
+    planData: ProjectPlan,
+    status: string
+  ): Promise<ProjectPlanRecord | undefined> {
+    // First verify ownership
+    const existing = await this.getProjectPlan(id, userId);
+    if (!existing) {
+      return undefined;
+    }
+
+    const [updatedProject] = await db
+      .update(projectPlans)
+      .set({
+        projectName: planData.projectName,
+        planData: planData as any,
+        status,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectPlans.id, id))
+      .returning();
+    
+    return updatedProject;
   }
 
   async getUserProjectPlans(userId: string): Promise<ProjectPlanRecord[]> {
