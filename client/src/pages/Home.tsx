@@ -1,8 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { ProjectInput } from "@/components/ProjectInput";
-import { ProjectPlanDisplay } from "@/components/ProjectPlanDisplay";
 import { ErrorDisplay } from "@/components/ErrorDisplay";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
@@ -10,47 +9,28 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import type { ProjectPlan } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { FolderOpen, LogOut } from "lucide-react";
 
 export default function Home() {
-  const [projectPlan, setProjectPlan] = useState<ProjectPlan | null>(null);
   const [lastDescription, setLastDescription] = useState<string>("");
   const { user, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
-  const generatePlanMutation = useMutation({
+  const createProjectMutation = useMutation({
     mutationFn: async (projectDescription: string) => {
       const response = await apiRequest(
         "POST",
-        "/api/plan-project",
+        "/api/projects/create",
         { projectDescription }
       );
       const data = await response.json();
-      console.log('[Home] API response data:', { 
-        hasId: 'id' in data, 
-        id: data.id,
-        keys: Object.keys(data)
-      });
-      return data as (ProjectPlan & { id: string });
+      return data as { id: string; status: string; createdAt: string };
     },
     onSuccess: (data) => {
-      console.log('[Home] onSuccess data:', { 
-        hasId: 'id' in data, 
-        id: data.id,
-        keys: Object.keys(data)
-      });
-      toast({
-        title: "Project plan created!",
-        description: "Redirecting to your project...",
-      });
-      // Redirect to the project detail page after a brief delay
-      setTimeout(() => {
-        console.log('[Home] Redirecting to:', `/projects/${data.id}`);
-        setLocation(`/projects/${data.id}`);
-      }, 800);
+      // Immediately redirect to the project page
+      setLocation(`/projects/${data.id}`);
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -62,20 +42,25 @@ export default function Home() {
         setTimeout(() => {
           window.location.href = "/api/login";
         }, 500);
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to create project. Please try again.",
+          variant: "destructive",
+        });
       }
     },
   });
 
   const handleSubmit = (description: string) => {
-    setProjectPlan(null);
     setLastDescription(description);
-    generatePlanMutation.mutate(description);
+    createProjectMutation.mutate(description);
   };
 
   const handleRetry = () => {
     if (lastDescription) {
-      generatePlanMutation.reset();
-      generatePlanMutation.mutate(lastDescription);
+      createProjectMutation.reset();
+      createProjectMutation.mutate(lastDescription);
     }
   };
 
@@ -139,26 +124,24 @@ export default function Home() {
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150">
           <ProjectInput
             onSubmit={handleSubmit}
-            isLoading={generatePlanMutation.isPending}
+            isLoading={createProjectMutation.isPending}
           />
         </div>
 
         {/* Results Area */}
         <div className="animate-in fade-in duration-500 delay-300">
-          {generatePlanMutation.isError && (
+          {createProjectMutation.isError && (
             <ErrorDisplay
               message={
-                generatePlanMutation.error instanceof Error
-                  ? generatePlanMutation.error.message
+                createProjectMutation.error instanceof Error
+                  ? createProjectMutation.error.message
                   : "An unexpected error occurred. Please try again."
               }
               onRetry={handleRetry}
             />
           )}
 
-          {projectPlan && <ProjectPlanDisplay plan={projectPlan} />}
-
-          {!projectPlan && !generatePlanMutation.isError && !generatePlanMutation.isPending && (
+          {!createProjectMutation.isError && !createProjectMutation.isPending && (
             <EmptyState />
           )}
         </div>
