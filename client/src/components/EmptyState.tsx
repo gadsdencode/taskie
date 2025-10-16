@@ -11,7 +11,7 @@ export function EmptyState() {
       <div className="space-y-2">
         <h3 className="text-xl font-semibold">Ready to Plan Your Project?</h3>
         <p className="text-muted-foreground max-w-md mx-auto">
-          Describe your home improvement project above and let our AI generate a comprehensive plan
+          Describe your project above and let our AI generate a comprehensive plan
           with materials, costs, execution steps, and disposal information.
         </p>
       </div>

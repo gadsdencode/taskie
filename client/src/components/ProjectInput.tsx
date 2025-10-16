@@ -43,7 +43,7 @@ export function ProjectInput({ onSubmit, isLoading }: ProjectInputProps) {
           Describe Your Project
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          Provide details about your home improvement project. The more specific you are, the better the plan will be.
+          Provide details about your project. The more specific you are, the better the plan will be.
         </CardDescription>
       </CardHeader>
       <CardContent>

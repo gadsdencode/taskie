@@ -88,7 +88,7 @@ export default function Home() {
               AI Project Planner
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed">
-              Get comprehensive home improvement plans powered by AI. Materials lists, cost breakdowns,
+              Get comprehensive plans powered by AI. Materials lists, cost breakdowns,
               step-by-step guides, and local disposal information.
             </p>
           </header>

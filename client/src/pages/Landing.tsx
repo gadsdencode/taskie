@@ -22,7 +22,7 @@ export default function Landing() {
           </h1>
           
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Get comprehensive home improvement plans with materials lists, cost breakdowns,
+            Get comprehensive plans with materials lists, cost breakdowns,
             step-by-step guides, and local disposal information.
           </p>
 
@@ -103,7 +103,7 @@ export default function Landing() {
           <CardHeader>
             <CardTitle>Example Projects</CardTitle>
             <CardDescription>
-              Our AI can help you plan any home improvement project
+              Our AI can help you plan any project
             </CardDescription>
           </CardHeader>
           <CardContent>
