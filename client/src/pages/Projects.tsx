@@ -11,7 +11,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { ProjectPlanRecord } from "@shared/schema";
 import { format } from "date-fns";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { ProjectSkeleton, GeneratingMessage } from "@/components/ProjectSkeleton";
 
 export default function Projects() {
   const { toast } = useToast();
@@ -197,15 +198,52 @@ function ProjectDetail({
 }) {
   const { toast } = useToast();
   const [isExporting, setIsExporting] = useState(false);
+  const [hasTriggeredGeneration, setHasTriggeredGeneration] = useState(false);
   
-  const { data: project, isLoading } = useQuery<ProjectPlanRecord>({
+  const { data: project, isLoading, refetch } = useQuery<ProjectPlanRecord>({
     queryKey: ["/api/projects", id],
     queryFn: async () => {
       const response = await fetch(`/api/projects/${id}`);
       if (!response.ok) throw new Error("Failed to fetch project");
       return response.json();
     },
+    refetchInterval: (query) => {
+      // Poll every 2 seconds if status is pending or generating
+      const projectData = query.state.data;
+      if (projectData?.status === 'pending' || projectData?.status === 'generating') {
+        return 2000;
+      }
+      return false; // Stop polling once completed
+    },
   });
+
+  // Mutation to trigger plan generation
+  const generatePlanMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/projects/${id}/generate`, null);
+      return response.json();
+    },
+    onSuccess: () => {
+      // Will be handled by the query polling
+      refetch();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Generation Failed",
+        description: error.message || "Failed to generate project plan. Please try again.",
+        variant: "destructive",
+      });
+      setHasTriggeredGeneration(false); // Allow retry
+    },
+  });
+
+  // Trigger generation for pending projects
+  useEffect(() => {
+    if (project?.status === 'pending' && !hasTriggeredGeneration && !generatePlanMutation.isPending) {
+      setHasTriggeredGeneration(true);
+      generatePlanMutation.mutate();
+    }
+  }, [project?.status, hasTriggeredGeneration, generatePlanMutation]);
 
   const handleExportPDF = async () => {
     try {
@@ -264,6 +302,8 @@ function ProjectDetail({
     );
   }
 
+  const isGenerating = project.status === 'pending' || project.status === 'generating';
+  const hasFailed = project.status === 'failed';
   const planData = project.planData as any;
 
   return (
@@ -283,32 +323,38 @@ function ProjectDetail({
               </Button>
             </Link>
             <div className="flex-1">
-              <h1 className="text-3xl font-bold">{project.projectName}</h1>
+              <h1 className="text-3xl font-bold">
+                {isGenerating ? "Generating Project Plan..." : project.projectName}
+              </h1>
               <p className="text-muted-foreground mt-1">
-                Created {format(new Date(project.createdAt), "MMMM d, yyyy 'at' h:mm a")}
+                {isGenerating 
+                  ? "AI is analyzing your project requirements" 
+                  : `Created ${format(new Date(project.createdAt), "MMMM d, yyyy 'at' h:mm a")}`}
               </p>
             </div>
           </div>
           
           <div className="flex items-center gap-2">
-            <Button
-              onClick={handleExportPDF}
-              disabled={isExporting}
-              variant="default"
-              data-testid="button-export-pdf"
-            >
-              {isExporting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Exporting...
-                </>
-              ) : (
-                <>
-                  <Download className="mr-2 h-4 w-4" />
-                  Export PDF
-                </>
-              )}
-            </Button>
+            {!isGenerating && !hasFailed && (
+              <Button
+                onClick={handleExportPDF}
+                disabled={isExporting}
+                variant="default"
+                data-testid="button-export-pdf"
+              >
+                {isExporting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Exporting...
+                  </>
+                ) : (
+                  <>
+                    <Download className="mr-2 h-4 w-4" />
+                    Export PDF
+                  </>
+                )}
+              </Button>
+            )}
             
             {user && (
               <div className="flex items-center gap-3 px-3 py-2 rounded-md border">
@@ -329,49 +375,85 @@ function ProjectDetail({
           </div>
         </div>
 
-        {/* Reuse ProjectPlanDisplay component */}
-        <div className="space-y-6">
-          {/* Cost Analysis Dashboard */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Card className="border-chart-1/30">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                  Materials Cost
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-mono font-semibold">
-                  ${planData.costAnalysis?.totalMaterialsCost?.toLocaleString() || '0'}
-                </p>
-              </CardContent>
-            </Card>
+        {/* Show loading skeleton or error state when generating */}
+        {isGenerating && (
+          <>
+            <GeneratingMessage />
+            <ProjectSkeleton />
+          </>
+        )}
 
-            <Card className="border-chart-3/30">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                  Labor Cost
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-mono font-semibold">
-                  ${planData.costAnalysis?.estimatedLaborCost?.toLocaleString() || '0'}
-                </p>
-              </CardContent>
-            </Card>
+        {/* Show error state if generation failed */}
+        {hasFailed && (
+          <Card className="border-destructive">
+            <CardContent className="py-12 text-center space-y-4">
+              <p className="text-lg text-destructive">Failed to generate project plan</p>
+              <p className="text-muted-foreground">
+                There was an error generating your project plan. Please try creating a new project.
+              </p>
+              <div className="flex gap-2 justify-center">
+                <Link href="/">
+                  <Button>Create New Project</Button>
+                </Link>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setHasTriggeredGeneration(false);
+                    generatePlanMutation.mutate();
+                  }}
+                  disabled={generatePlanMutation.isPending}
+                >
+                  Retry Generation
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-            <Card className="border-chart-2/30">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                  Total Project Cost
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-mono font-semibold text-chart-2">
-                  ${planData.costAnalysis?.totalProjectCost?.toLocaleString() || '0'}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+        {/* Show project plan when completed */}
+        {!isGenerating && !hasFailed && planData && (
+          <div className="space-y-6">
+            {/* Cost Analysis Dashboard */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <Card className="border-chart-1/30">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+                    Materials Cost
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-3xl font-mono font-semibold">
+                    ${planData.costAnalysis?.totalMaterialsCost?.toLocaleString() || '0'}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="border-chart-3/30">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+                    Labor Cost
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-3xl font-mono font-semibold">
+                    ${planData.costAnalysis?.estimatedLaborCost?.toLocaleString() || '0'}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="border-chart-2/30">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+                    Total Project Cost
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-3xl font-mono font-semibold text-chart-2">
+                    ${planData.costAnalysis?.totalProjectCost?.toLocaleString() || '0'}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
 
           {/* Materials */}
           {planData.materials && planData.materials.length > 0 && (
@@ -468,6 +550,7 @@ function ProjectDetail({
             </Card>
           )}
         </div>
+        )}
       </div>
     </div>
   );
