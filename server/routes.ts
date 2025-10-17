@@ -366,12 +366,35 @@ Generate the JSON response now:
   }
 
   /**
+   * Helper function to handle failure rollback
+   */
+  async function handleGenerationFailure(
+    projectId: string,
+    userId: string,
+    failureReason: string
+  ): Promise<void> {
+    try {
+      await updateProjectStatus(
+        projectId,
+        userId,
+        createEmptyPlan(failureReason),
+        "failed"
+      );
+    } catch (rollbackError) {
+      console.error("Failed to rollback project status:", rollbackError);
+      // Don't throw - we want to return the original error to the user
+    }
+  }
+
+  /**
    * Main orchestration function for generating a project plan
    */
   async function generatePlan(
     projectId: string, 
     userId: string
   ): Promise<{ success: boolean; data?: any; error?: { status: number; message: string; details?: any } }> {
+    let projectValidated = false;
+    
     try {
       // Step 1: Validate project
       const validation = await validateProjectForGeneration(projectId, userId);
@@ -380,6 +403,7 @@ Generate the JSON response now:
       }
 
       const project = validation.project;
+      projectValidated = true;
 
       // Step 2: Update status to generating
       await updateProjectStatus(
@@ -411,74 +435,63 @@ Generate the JSON response now:
     } catch (error) {
       console.error("Error in generatePlan:", error);
 
-      // Handle different error types
-      if (error instanceof ZodError) {
-        console.error("Zod validation errors:", JSON.stringify(error.errors, null, 2));
-        
-        // Update status to failed
-        await updateProjectStatus(
-          projectId, 
-          userId, 
-          createEmptyPlan("Validation Failed"), 
-          "failed"
-        );
-        
+      // Only rollback if project was validated (meaning it exists and was in pending state)
+      if (projectValidated) {
+        let failureReason = "Generation Failed";
+        let statusCode = 500;
+        let errorMessage = "Failed to generate project plan. Please try again.";
+        let errorDetails: any = undefined;
+
+        // Handle different error types
+        if (error instanceof ZodError) {
+          console.error("Zod validation errors:", JSON.stringify(error.errors, null, 2));
+          failureReason = "Validation Failed";
+          statusCode = 400;
+          errorMessage = "AI response validation failed. Please try again with a different description.";
+          errorDetails = error.errors;
+        } else if (error instanceof SyntaxError) {
+          failureReason = "Parse Failed";
+          statusCode = 500;
+          errorMessage = "Failed to parse AI response. The AI service may be experiencing issues. Please try again.";
+        } else if (error instanceof Error) {
+          const message = error.message;
+          
+          if (message.includes("No response candidates") || message.includes("Empty response")) {
+            failureReason = "AI Response Failed";
+            errorMessage = message;
+          } else if (message.includes("overloaded") || message.includes("UNAVAILABLE")) {
+            failureReason = "Service Unavailable";
+            statusCode = 503;
+            errorMessage = "The AI service is currently overloaded. Please try again in a moment.";
+          } else if (message.includes("AI response is missing required fields")) {
+            failureReason = "Invalid Response";
+            errorMessage = message;
+          } else {
+            // Generic error
+            errorMessage = message || errorMessage;
+          }
+        }
+
+        // Always rollback to failed state when an error occurs after project validation
+        await handleGenerationFailure(projectId, userId, failureReason);
+
         return {
           success: false,
           error: {
-            status: 400,
-            message: "AI response validation failed. Please try again with a different description.",
-            details: error.errors
+            status: statusCode,
+            message: errorMessage,
+            ...(errorDetails && { details: errorDetails })
           }
         };
       }
 
-      if (error instanceof SyntaxError) {
-        // Update status to failed
-        await updateProjectStatus(
-          projectId, 
-          userId, 
-          createEmptyPlan("Parse Failed"), 
-          "failed"
-        );
-        
-        return {
-          success: false,
-          error: {
-            status: 500,
-            message: "Failed to parse AI response. The AI service may be experiencing issues. Please try again."
-          }
-        };
-      }
-
-      // Handle Gemini API specific errors
+      // If project wasn't validated, just return the error without rollback
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      
-      // Update status to failed for any AI errors
-      if (errorMessage.includes("No response candidates") || errorMessage.includes("Empty response")) {
-        await updateProjectStatus(
-          projectId, 
-          userId, 
-          createEmptyPlan("Generation Failed"), 
-          "failed"
-        );
-      }
-      
-      if (errorMessage.includes("overloaded") || errorMessage.includes("UNAVAILABLE")) {
-        return {
-          success: false,
-          error: {
-            status: 503,
-            message: "The AI service is currently overloaded. Please try again in a moment."
-          }
-        };
-      }
-
       return {
         success: false,
         error: {
           status: 500,
-          message: errorMessage || "Failed to generate project plan. Please try again."
+          message: errorMessage
         }
       };
     }
