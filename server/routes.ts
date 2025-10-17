@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { GoogleGenAI } from "@google/genai";
-import { projectPlanSchema, projectInputSchema } from "@shared/schema";
+import { projectPlanSchema, projectInputSchema, type ProjectPlan } from "@shared/schema";
 import { ZodError } from "zod";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { storage } from "./storage";
@@ -200,34 +200,59 @@ Generate the JSON response now:
     }
   });
 
-  // Generate plan for an existing pending project
-  app.post("/api/projects/:id/generate", isAuthenticated, generateProjectLimiter, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const projectId = req.params.id;
-      
-      // Get the project to verify it exists and get the description
-      const project = await storage.getProjectPlan(projectId, userId);
-      
-      if (!project) {
-        return res.status(404).json({ error: "Project not found" });
-      }
-      
-      if (project.status !== "pending") {
-        return res.status(400).json({ error: "Project plan already generated" });
-      }
+  // Helper Functions for Project Plan Generation
 
-      // Update status to generating
-      await storage.updateProjectWithPlan(projectId, userId, { 
-        projectName: "Generating...",
-        materials: [],
-        costAnalysis: { totalMaterialsCost: 0, estimatedLaborCost: 0, totalProjectCost: 0 },
-        executionSteps: [],
-        disposalInfo: { regulationsSummary: "", landfillOptions: [] }
-      }, "generating");
+  /**
+   * Creates an empty project plan for failed states
+   */
+  function createEmptyPlan(projectName: string = "Failed"): ProjectPlan {
+    return {
+      projectName,
+      materials: [],
+      costAnalysis: { 
+        totalMaterialsCost: 0, 
+        estimatedLaborCost: 0, 
+        totalProjectCost: 0 
+      },
+      executionSteps: [],
+      disposalInfo: { 
+        regulationsSummary: "", 
+        landfillOptions: [] 
+      }
+    };
+  }
 
-      // Construct prompt for Gemini AI
-      const prompt = `
+  /**
+   * Validates that a project exists and is in the correct state for generation
+   */
+  async function validateProjectForGeneration(
+    projectId: string, 
+    userId: string
+  ): Promise<{ isValid: boolean; error?: { status: number; message: string }; project?: any }> {
+    const project = await storage.getProjectPlan(projectId, userId);
+    
+    if (!project) {
+      return { 
+        isValid: false, 
+        error: { status: 404, message: "Project not found" } 
+      };
+    }
+    
+    if (project.status !== "pending") {
+      return { 
+        isValid: false, 
+        error: { status: 400, message: "Project plan already generated" } 
+      };
+    }
+
+    return { isValid: true, project };
+  }
+
+  /**
+   * Generates the AI prompt for project plan generation
+   */
+  function generateAIPrompt(projectDescription: string): string {
+    return `
 You are an expert project planner and cost estimator for home improvement projects.
 
 Analyze the user's project request and generate a comprehensive project plan. Follow a "Plan-and-Solve" approach. First, devise a plan for your research. Second, execute that plan to generate the final output covering:
@@ -236,7 +261,7 @@ Analyze the user's project request and generate a comprehensive project plan. Fo
 3. A logical, step-by-step execution guide with clear instructions.
 4. Specific regulations for construction debris disposal in Chesterfield County, Virginia, including actual landfill options with addresses.
 
-User's Project Request: "${project.projectDescription}"
+User's Project Request: "${projectDescription}"
 Location for Analysis: Chesterfield County, Virginia
 
 IMPORTANT: Respond ONLY with a single, valid JSON object that adheres to the following schema. Do not include markdown, explanations, or any other text before or after the JSON.
@@ -272,127 +297,211 @@ Schema:
 
 Generate the JSON response now:
 `;
+  }
 
-      // Call Gemini AI
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-        ],
-      });
+  /**
+   * Calls the Gemini AI API to generate a project plan
+   */
+  async function callGeminiAI(prompt: string): Promise<string> {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: prompt }],
+        },
+      ],
+    });
 
-      // Check if response has candidates
-      if (!response.candidates || response.candidates.length === 0) {
-        // Update status to failed
-        await storage.updateProjectWithPlan(projectId, userId, {
-          projectName: "Generation Failed",
-          materials: [],
-          costAnalysis: { totalMaterialsCost: 0, estimatedLaborCost: 0, totalProjectCost: 0 },
-          executionSteps: [],
-          disposalInfo: { regulationsSummary: "", landfillOptions: [] }
-        }, "failed");
-        throw new Error("No response candidates from AI. Please try again.");
+    // Validate response has candidates
+    if (!response.candidates || response.candidates.length === 0) {
+      throw new Error("No response candidates from AI. Please try again.");
+    }
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("Empty response from AI. Please try again.");
+    }
+
+    return text;
+  }
+
+  /**
+   * Parses and validates the AI response
+   */
+  function parseAIResponse(responseText: string): ProjectPlan {
+    let jsonText = responseText.trim();
+    
+    // Remove markdown code blocks if present
+    if (jsonText.startsWith("```json")) {
+      jsonText = jsonText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+    } else if (jsonText.startsWith("```")) {
+      jsonText = jsonText.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    }
+
+    // Parse JSON
+    const parsedData = JSON.parse(jsonText);
+    
+    // Validate with Zod schema
+    const validatedPlan = projectPlanSchema.parse(parsedData);
+
+    // Additional safety check
+    if (!validatedPlan.costAnalysis || !validatedPlan.materials || !validatedPlan.executionSteps) {
+      throw new Error("AI response is missing required fields. Please try again.");
+    }
+
+    return validatedPlan;
+  }
+
+  /**
+   * Updates the project status in the database
+   */
+  async function updateProjectStatus(
+    projectId: string, 
+    userId: string, 
+    planData: ProjectPlan, 
+    status: string
+  ) {
+    return await storage.updateProjectWithPlan(projectId, userId, planData, status);
+  }
+
+  /**
+   * Main orchestration function for generating a project plan
+   */
+  async function generatePlan(
+    projectId: string, 
+    userId: string
+  ): Promise<{ success: boolean; data?: any; error?: { status: number; message: string; details?: any } }> {
+    try {
+      // Step 1: Validate project
+      const validation = await validateProjectForGeneration(projectId, userId);
+      if (!validation.isValid) {
+        return { success: false, error: validation.error };
       }
 
-      const text = response.text;
+      const project = validation.project;
 
-      if (!text) {
-        // Update status to failed
-        await storage.updateProjectWithPlan(projectId, userId, {
-          projectName: "Generation Failed",
-          materials: [],
-          costAnalysis: { totalMaterialsCost: 0, estimatedLaborCost: 0, totalProjectCost: 0 },
-          executionSteps: [],
-          disposalInfo: { regulationsSummary: "", landfillOptions: [] }
-        }, "failed");
-        throw new Error("Empty response from AI. Please try again.");
-      }
+      // Step 2: Update status to generating
+      await updateProjectStatus(
+        projectId, 
+        userId, 
+        createEmptyPlan("Generating..."), 
+        "generating"
+      );
 
-      // Extract JSON from response
-      let jsonText = text.trim();
-      
-      // Remove markdown code blocks if present
-      if (jsonText.startsWith("```json")) {
-        jsonText = jsonText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
-      } else if (jsonText.startsWith("```")) {
-        jsonText = jsonText.replace(/^```\s*/, "").replace(/\s*```$/, "");
-      }
+      // Step 3: Generate AI prompt
+      const prompt = generateAIPrompt(project.projectDescription);
 
-      // Parse and validate the response
-      const parsedData = JSON.parse(jsonText);
-      const validatedPlan = projectPlanSchema.parse(parsedData);
+      // Step 4: Call AI service
+      const aiResponse = await callGeminiAI(prompt);
 
-      // Additional safety check
-      if (!validatedPlan.costAnalysis || !validatedPlan.materials || !validatedPlan.executionSteps) {
-        throw new Error("AI response is missing required fields. Please try again.");
-      }
+      // Step 5: Parse and validate response
+      const validatedPlan = parseAIResponse(aiResponse);
 
-      // Update the project with the generated plan
-      const updatedProject = await storage.updateProjectWithPlan(
-        projectId,
-        userId,
-        validatedPlan,
+      // Step 6: Update project with the generated plan
+      const updatedProject = await updateProjectStatus(
+        projectId, 
+        userId, 
+        validatedPlan, 
         "completed"
       );
 
-      res.json(updatedProject);
+      return { success: true, data: updatedProject };
+
     } catch (error) {
-      console.error("Error generating project plan:", error);
+      console.error("Error in generatePlan:", error);
 
-      // Log the actual error for debugging
-      if (error && typeof error === 'object' && 'message' in error) {
-        console.error("Error details:", JSON.stringify(error, null, 2));
-      }
-
+      // Handle different error types
       if (error instanceof ZodError) {
         console.error("Zod validation errors:", JSON.stringify(error.errors, null, 2));
         
         // Update status to failed
-        const userId = (req as any).user.claims.sub;
-        await storage.updateProjectWithPlan((req as any).params.id, userId, {
-          projectName: "Validation Failed",
-          materials: [],
-          costAnalysis: { totalMaterialsCost: 0, estimatedLaborCost: 0, totalProjectCost: 0 },
-          executionSteps: [],
-          disposalInfo: { regulationsSummary: "", landfillOptions: [] }
-        }, "failed");
+        await updateProjectStatus(
+          projectId, 
+          userId, 
+          createEmptyPlan("Validation Failed"), 
+          "failed"
+        );
         
-        return res.status(400).json({
-          error: "AI response validation failed. Please try again with a different description.",
-          details: error.errors,
-        });
+        return {
+          success: false,
+          error: {
+            status: 400,
+            message: "AI response validation failed. Please try again with a different description.",
+            details: error.errors
+          }
+        };
       }
 
       if (error instanceof SyntaxError) {
         // Update status to failed
-        const userId = (req as any).user.claims.sub;
-        await storage.updateProjectWithPlan((req as any).params.id, userId, {
-          projectName: "Parse Failed",
-          materials: [],
-          costAnalysis: { totalMaterialsCost: 0, estimatedLaborCost: 0, totalProjectCost: 0 },
-          executionSteps: [],
-          disposalInfo: { regulationsSummary: "", landfillOptions: [] }
-        }, "failed");
+        await updateProjectStatus(
+          projectId, 
+          userId, 
+          createEmptyPlan("Parse Failed"), 
+          "failed"
+        );
         
-        return res.status(500).json({
-          error: "Failed to parse AI response. The AI service may be experiencing issues. Please try again.",
-        });
+        return {
+          success: false,
+          error: {
+            status: 500,
+            message: "Failed to parse AI response. The AI service may be experiencing issues. Please try again."
+          }
+        };
       }
 
       // Handle Gemini API specific errors
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      
+      // Update status to failed for any AI errors
+      if (errorMessage.includes("No response candidates") || errorMessage.includes("Empty response")) {
+        await updateProjectStatus(
+          projectId, 
+          userId, 
+          createEmptyPlan("Generation Failed"), 
+          "failed"
+        );
+      }
+      
       if (errorMessage.includes("overloaded") || errorMessage.includes("UNAVAILABLE")) {
-        return res.status(503).json({
-          error: "The AI service is currently overloaded. Please try again in a moment.",
-        });
+        return {
+          success: false,
+          error: {
+            status: 503,
+            message: "The AI service is currently overloaded. Please try again in a moment."
+          }
+        };
       }
 
-      res.status(500).json({
-        error: errorMessage || "Failed to generate project plan. Please try again.",
+      return {
+        success: false,
+        error: {
+          status: 500,
+          message: errorMessage || "Failed to generate project plan. Please try again."
+        }
+      };
+    }
+  }
+
+  // Generate plan for an existing pending project (Refactored Route Handler)
+  app.post("/api/projects/:id/generate", isAuthenticated, generateProjectLimiter, async (req: any, res) => {
+    const userId = req.user.claims.sub;
+    const projectId = req.params.id;
+    
+    // Call the main orchestration function
+    const result = await generatePlan(projectId, userId);
+    
+    if (result.success) {
+      res.json(result.data);
+    } else if (result.error) {
+      res.status(result.error.status).json({
+        error: result.error.message,
+        ...(result.error.details && { details: result.error.details })
       });
+    } else {
+      // Fallback error response (should never happen)
+      res.status(500).json({ error: "An unexpected error occurred" });
     }
   });
 
