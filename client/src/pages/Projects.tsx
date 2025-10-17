@@ -9,6 +9,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import { getErrorDetails } from "@/lib/errorHandler";
 import type { ProjectPlanRecord } from "@shared/schema";
 import { format } from "date-fns";
 import { useState, useEffect } from "react";
@@ -48,21 +49,20 @@ export default function Projects() {
         description: "Your project has been deleted successfully.",
       });
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
       if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
+        // Handle unauthorized separately  
         setTimeout(() => {
           window.location.href = "/api/login";
         }, 500);
         return;
       }
+      
+      // Get user-friendly error details
+      const errorDetails = getErrorDetails(error);
       toast({
-        title: "Error",
-        description: "Failed to delete project. Please try again.",
+        title: errorDetails.title,
+        description: errorDetails.message,
         variant: "destructive",
       });
     },
@@ -227,10 +227,11 @@ function ProjectDetail({
       // Will be handled by the query polling
       refetch();
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
+      const errorDetails = getErrorDetails(error);
       toast({
-        title: "Generation Failed",
-        description: error.message || "Failed to generate project plan. Please try again.",
+        title: errorDetails.title,
+        description: errorDetails.message,
         variant: "destructive",
       });
       setHasTriggeredGeneration(false); // Allow retry
@@ -268,10 +269,11 @@ function ProjectDetail({
         title: "PDF Downloaded",
         description: "Your project plan has been exported successfully.",
       });
-    } catch (error) {
+    } catch (error: any) {
+      const errorDetails = getErrorDetails(error);
       toast({
-        title: "Export Failed",
-        description: "Failed to export PDF. Please try again.",
+        title: errorDetails.title,
+        description: errorDetails.message,
         variant: "destructive",
       });
     } finally {

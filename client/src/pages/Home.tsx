@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { apiRequest } from "@/lib/queryClient";
+import { getErrorDetails } from "@/lib/errorHandler";
 import { FolderOpen, LogOut } from "lucide-react";
 
 export default function Home() {
@@ -32,23 +33,21 @@ export default function Home() {
       // Immediately redirect to the project page
       setLocation(`/projects/${data.id}`);
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
       if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
+        // Handle unauthorized separately
         setTimeout(() => {
           window.location.href = "/api/login";
         }, 500);
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to create project. Please try again.",
-          variant: "destructive",
-        });
       }
+      
+      // Get user-friendly error details
+      const errorDetails = getErrorDetails(error);
+      toast({
+        title: errorDetails.title,
+        description: errorDetails.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -132,11 +131,7 @@ export default function Home() {
         <div className="animate-in fade-in duration-500 delay-300">
           {createProjectMutation.isError && (
             <ErrorDisplay
-              message={
-                createProjectMutation.error instanceof Error
-                  ? createProjectMutation.error.message
-                  : "An unexpected error occurred. Please try again."
-              }
+              error={createProjectMutation.error}
               onRetry={handleRetry}
             />
           )}
