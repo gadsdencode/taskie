@@ -5,6 +5,12 @@ import { projectPlanSchema, projectInputSchema } from "@shared/schema";
 import { ZodError } from "zod";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { storage } from "./storage";
+import { 
+  createProjectLimiter, 
+  generateProjectLimiter, 
+  generalApiLimiter,
+  planProjectLimiter 
+} from "./rateLimiter";
 
 // DON'T DELETE THIS COMMENT
 // Using Gemini AI blueprint integration
@@ -12,6 +18,9 @@ import { storage } from "./storage";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Apply general rate limiting to all API endpoints
+  app.use("/api", generalApiLimiter);
+  
   // Setup authentication
   await setupAuth(app);
 
@@ -33,7 +42,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Project planning endpoint with Gemini AI (now requires auth and saves to DB)
-  app.post("/api/plan-project", isAuthenticated, async (req: any, res) => {
+  app.post("/api/plan-project", isAuthenticated, planProjectLimiter, async (req: any, res) => {
     try {
       // Validate input
       const { projectDescription } = projectInputSchema.parse(req.body);
@@ -172,7 +181,7 @@ Generate the JSON response now:
   });
 
   // Create a pending project and immediately return ID
-  app.post("/api/projects/create", isAuthenticated, async (req: any, res) => {
+  app.post("/api/projects/create", isAuthenticated, createProjectLimiter, async (req: any, res) => {
     try {
       const { projectDescription } = projectInputSchema.parse(req.body);
       const userId = req.user.claims.sub;
@@ -192,7 +201,7 @@ Generate the JSON response now:
   });
 
   // Generate plan for an existing pending project
-  app.post("/api/projects/:id/generate", isAuthenticated, async (req: any, res) => {
+  app.post("/api/projects/:id/generate", isAuthenticated, generateProjectLimiter, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const projectId = req.params.id;
